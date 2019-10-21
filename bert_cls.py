@@ -246,5 +246,5 @@ if __name__ == '__main__':
     s = bert_extend(config_path, checkpoint_path, dict_path)
     # s.train('./data/train.csv')
     # s.test_res('./data/dev_id.csv')
-    s.build_bert_model()
+    s.build_bert_domain_model()
     s.model.summary()
