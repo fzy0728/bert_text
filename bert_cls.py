@@ -122,16 +122,16 @@ class bert_extend:
             l.trainable = True
         x1_in = Input(shape=(None,))
         x2_in = Input(shape=(None,))
-        # x3_in = Input(shape=(5,))
 
         x = bert_model([x1_in, x2_in])
         x = Lambda(lambda x: x[:, 0])(x)
 
-        des = Dense(256, activation='relu')(x)
-        p2 = Dense(5, activation='softmax')(des)
+        des1 = Dense(256, activation='relu')(x)
+        des2 = Dense(256, activation='relu')(x)
+        p2 = Dense(5, activation='softmax')(des1)
 
         flip_layer = GradientReversal(0.31)
-        p_in = flip_layer(des)
+        p_in = flip_layer(des2)
         p = Dense(1, activation='sigmoid')(p_in)
 
         self.model = Model([x1_in, x2_in], [p, p2])
@@ -202,8 +202,8 @@ class bert_extend:
             verbose=True
         )
 
-    def write_test_result(self):
-        result = self.test_res()
+    def write_test_result(self, test_file):
+        result = self.test_res(test_file)
 
         res = []
         for index, i in enumerate(result):
@@ -218,10 +218,11 @@ class bert_extend:
         test = pd.read_csv(test_file)
         test_1 = test['question1'].values
         test_2 = test['question2'].values
-        test_3 = test['category'].values
-        test_data = [i for i in zip(test_1, test_2, test_3)]
+        # test_3 = test['category'].values
+        test_data = [i for i in zip(test_1, test_2)]
         self.model.load_weights('./checkpoint_bert1.hdf5')
         result = self.model.predict(self.t_encode(test_data), verbose=True)
+        print(result[0])
         return result
 
     def t_encode(self, d):
@@ -233,8 +234,8 @@ class bert_extend:
             cata = get_category_embedding(i[2])
             x1.append(indices)
             x2.append(segements)
-            x3.append(cata)
-        return [seq_pedding(x1), seq_pedding(x2), seq_pedding(x3)]
+            # x3.append(cata)
+        return [seq_pedding(x1), seq_pedding(x2)]
 
 
 

@@ -24,7 +24,7 @@ class data_generator:
         while True:
             idxs = list(range(len(self.data)))
             np.random.shuffle(idxs)
-            x1, x2, x3, Y = [], [], [], []
+            x1, x2, Y, Y1 = [], [], [], []
             for i in idxs:
                 d = self.data[i]
                 text1 = d[0][:self.maxlen]
@@ -34,12 +34,12 @@ class data_generator:
                 y = d[3]
                 x1.append(indices)
                 x2.append(segments)
-                x3.append(text3)
+                Y1.append(text3)
                 Y.append([y])
                 if len(x1) == self.batch_size or i == idxs[-1]:
                     x1 = seq_pedding(x1)
                     x2 = seq_pedding(x2)
-                    x3 = seq_pedding(x3)
+                    Y1 = seq_pedding(Y1)
                     Y = seq_pedding(Y)
-                    yield [x1, x2, x3], Y
-                    x1, x2, x3, Y = [], [], [] ,[]
+                    yield [x1, x2], [Y, Y1]
+                    x1, x2, Y, Y1 = [], [], [] ,[]
