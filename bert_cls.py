@@ -5,6 +5,8 @@ import keras.backend as K
 import pandas as pd
 from random import choice
 from keras_bert import load_trained_model_from_checkpoint, Tokenizer
+from gradient_reversal import GradientReversal
+from math import exp
 import re, os
 import codecs
 
@@ -41,7 +43,20 @@ class bert_extend:
                 token = line.strip()
                 token_dict[token] = len(token_dict)
         self.tokenizer = OurTokenizer(token_dict)
+        self.n_timesteps = 500
 
+    def create_loss_weights(self):
+        """Create loss weights that increase exponentially with time.
+
+        Returns
+        -------
+        type : list
+            A list containing a weight for each timestep.
+        """
+        weights = []
+        for t in range(self.n_timesteps):
+            weights.append(exp(-(self.n_timesteps - t)))
+        return weights
 
     def build_bert_model(self):
         bert_model = load_trained_model_from_checkpoint(self.config, self.checkpoint_path)
@@ -59,6 +74,67 @@ class bert_extend:
         p = Dense(1, activation='sigmoid')(x)
 
         self.model = Model([x1_in, x2_in, x3_in], p)
+
+
+    def sample_compile_model(self):
+        self.model.compile(
+            loss='binary_crossentropy',
+            optimizer=Adam(1e-5),
+            metrics=['accuracy']
+        )
+        self.model.summary()
+
+        return self.model
+
+    def compile_model(self, loss='categorical_crossentropy', optimizer=Adam(1e-5), metrics=None, loss_weights=None):
+        """Compile the model.
+
+        Parameters
+        ----------
+        loss : str or custom loss function, optional
+            Loss function to use for the training. Categorical crossentropy by default.
+        optimizer : str or custom optimizer object, optional
+            Optimizer to use for the training. Adam by default.
+        metrics : list
+            Metric to use for the training. Can be a custom metric function.
+        loss_weights: dict
+            Dictionary of loss weights. The items of the dictionary can be lists, with one weight per timestep.
+
+        Returns
+        -------
+        type : keras.Model
+            The compiled model.
+        """
+        if metrics is None:
+            metrics = ['accuracy']
+        if loss_weights is None:
+            weights = self.create_loss_weights()
+            loss_weights = {'domain_classifier': weights, 'aux_classifier': weights}
+
+        self.model.compile(loss=loss, optimizer=optimizer, metrics=metrics, sample_weight_mode='temporal',
+                           loss_weights=loss_weights)
+
+        return self.model
+
+    def build_bert_domain_model(self):
+        bert_model = load_trained_model_from_checkpoint(self.config, self.checkpoint_path)
+        for l in bert_model.layers:
+            l.trainable = True
+        x1_in = Input(shape=(None,))
+        x2_in = Input(shape=(None,))
+        # x3_in = Input(shape=(5,))
+
+        x = bert_model([x1_in, x2_in])
+        x = Lambda(lambda x: x[:, 0])(x)
+
+        des = Dense(256, activation='relu')(x)
+        p2 = Dense(5, activation='softmax')(des)
+
+        flip_layer = GradientReversal(0.31)
+        p_in = flip_layer(des)
+        p = Dense(1, activation='sigmoid')(p_in)
+
+        self.model = Model([x1_in, x2_in], [p, p2])
         self.model.compile(
             loss='binary_crossentropy',
             optimizer=Adam(1e-5),
@@ -93,7 +169,6 @@ class bert_extend:
         train_1 = train['question1'].values
         train_2 = train['question2'].values
         train_3 = train['category'].values
-
 
         labels = train['label'].astype(int).values
 
@@ -169,5 +244,7 @@ if __name__ == '__main__':
     checkpoint_path = '/home/fuziyu/share/bert_origin/chinese/bert_model.ckpt'
     dict_path = '/home/fuziyu/share/bert_origin/chinese/vocab.txt'
     s = bert_extend(config_path, checkpoint_path, dict_path)
-    s.train('./data/train.csv')
-    s.test_res('./data/dev_id.csv')
+    # s.train('./data/train.csv')
+    # s.test_res('./data/dev_id.csv')
+    s.build_bert_model()
+    s.model.summary()
