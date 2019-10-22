@@ -31,11 +31,12 @@ class data_generator:
                 text2 = d[1][:self.maxlen]
                 indices, segments = self.tokenizer.encode(first=text1, second=text2)
                 text3 = get_category_embedding(d[2])
+#                 print(text3)
                 y = d[3]
                 x1.append(indices)
                 x2.append(segments)
                 Y1.append(text3)
-                Y.append([y])
+                Y.append(y)
                 if len(x1) == self.batch_size or i == idxs[-1]:
                     x1 = seq_pedding(x1)
                     x2 = seq_pedding(x2)
