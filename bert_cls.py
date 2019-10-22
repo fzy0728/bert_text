@@ -19,6 +19,7 @@ from keras.callbacks import *
 
 from tokenizer import OurTokenizer
 from data_processing import data_generator
+from gradient_reversal import GradientReversal
 from utils import (
     seq_pedding,
     get_category_embedding
@@ -142,7 +143,8 @@ class bert_extend:
         self.model = Model([x1_in, x2_in], [p, p2])
         return self.compile_model()
 
-    def model_fit(self, train_D, valid_D):
+    def model_fit_1(self, train_D, valid_D):
+        self.build_bert_model()
         checkpointer = ModelCheckpoint(filepath="./checkpoint_bert.hdf5",
                                        monitor='val_acc', verbose=True, save_best_only=True, mode='auto')
 
@@ -156,6 +158,27 @@ class bert_extend:
             validation_data=valid_D.__iter__(),
             validation_steps=len(valid_D),
             callbacks=[reducelr, checkpointer, early],
+            verbose=True
+        )
+
+    def model_fit_2(self, train_D, valid_D):
+        checkpointer = ModelCheckpoint(filepath="./checkpoint_bert.hdf5",
+                                       monitor='val_aux_classifier_acc',
+                                       verbose=True, save_best_only=True,
+                                       mode='auto')
+
+        early = EarlyStopping(monitor='val_aux_classifier_loss', patience=4, verbose=0,
+                              mode='auto')
+        #         reducelr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.001)
+        model = self.build_bert_domain_model()
+
+        model.fit_generator(
+            train_D.__iter__(),
+            steps_per_epoch=len(train_D),
+            epochs=10,
+            validation_data=valid_D.__iter__(),
+            validation_steps=len(valid_D),
+            callbacks=[checkpointer, early],
             verbose=True
         )
 
@@ -188,26 +211,8 @@ class bert_extend:
         train_D = data_generator(train_data, self.tokenizer)
         valid_D = data_generator(val_data, self.tokenizer)
 
-        checkpointer = ModelCheckpoint(filepath="./checkpoint_bert.hdf5",
-                                       monitor='val_aux_classifier_acc',
-                                       verbose=True, save_best_only=True,
-                                       mode='auto')
+        self.model_fit_2(train_D, valid_D)
 
-
-        early = EarlyStopping(monitor='val_aux_classifier_loss', patience=4, verbose=0,
-                mode='auto')
-#         reducelr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.001)
-        model = self.build_bert_domain_model()
-
-        model.fit_generator(
-            train_D.__iter__(),
-            steps_per_epoch=len(train_D),
-            epochs=10,
-            validation_data=valid_D.__iter__(),
-            validation_steps=len(valid_D),
-            callbacks=[checkpointer, early],
-            verbose=True
-        )
 
     def write_test_result(self, test_file):
         result = self.test_res(test_file)
@@ -220,7 +225,6 @@ class bert_extend:
                 res.append([index, 0])
         res = pd.DataFrame(res, columns=['id', 'label'])
         res.to_csv('baseline_bert_2.csv', index=False)
-
 
     def test_res(self, test_file):
         test = pd.read_csv(test_file)
@@ -248,49 +252,6 @@ class bert_extend:
             # x3.append(cata)
         return [seq_pedding(x1), seq_pedding(x2)]
 
-def reverse_gradient(X, hp_lambda):
-    """Flips the sign of the incoming gradient during training."""
-    print(1)
-    try:
-        reverse_gradient.num_calls += 1
-    except AttributeError:
-        reverse_gradient.num_calls = 1
-
-    grad_name = "GradientReversal%d" % reverse_gradient.num_calls
-
-    @tf.RegisterGradient(grad_name)
-    def _flip_gradients(op, grad):
-        return [tf.negative(grad) * hp_lambda]
-
-    g = K.get_session().graph
-    with g.gradient_override_map({'Identity': grad_name}):
-        y = tf.identity(X)
-
-    return y
-
-
-class GradientReversal(Layer):
-    """Layer that flips the sign of gradient during training."""
-
-    def __init__(self, hp_lambda, **kwargs):
-        super(GradientReversal, self).__init__(**kwargs)
-        self.supports_masking = True
-        self.hp_lambda = hp_lambda
-
-    @staticmethod
-    def get_output_shape_for(input_shape):
-        return input_shape
-
-    def build(self, input_shape):
-        self.trainable_weights = []
-
-    def call(self, x, mask=None):
-        return reverse_gradient(x, self.hp_lambda)
-
-    def get_config(self):
-        config = {}
-        base_config = super(GradientReversal, self).get_config()
-        return dict(list(base_config.items()) + list(config.items()))
 
 if __name__ == '__main__':
     maxlen = 100
