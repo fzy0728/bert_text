@@ -43,4 +43,5 @@ class data_generator:
                     Y1 = seq_pedding(Y1)
                     Y = seq_pedding(Y)
                     yield [x1, x2], [Y, Y1]
+#                     yield [x1, x2], [Y]
                     x1, x2, Y, Y1 = [], [], [] ,[]

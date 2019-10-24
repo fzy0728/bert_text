@@ -13,7 +13,7 @@ import tensorflow as tf
 from keras.engine import Layer
 from keras.layers import *
 from keras.models import Model
-from keras.optimizers import Adam, Adadelta
+from keras.optimizers import Adam, Adadelta, SGD
 
 from keras.callbacks import *
 
@@ -68,29 +68,48 @@ class bert_extend:
             l.trainable = True
         x1_in = Input(shape=(None,))
         x2_in = Input(shape=(None,))
-        x3_in = Input(shape=(5,))
+#         x3_in = Input(shape=(5,))
 
         x = bert_model([x1_in, x2_in])
         x = Lambda(lambda x: x[:, 0])(x)
 
-        x = concatenate([x, x3_in], axis=-1)
+#         x = concatenate([x, x3_in], axis=-1)
 
-        p = Dense(1, activation='sigmoid')(x)
+        p = Dense(2, activation='softmax')(x)
 
-        self.model = Model([x1_in, x2_in, x3_in], p)
+        self.model = Model([x1_in, x2_in], p)
+        self.sample_compile_model()
 
+    def build_bert_textcnn_model(self):
+        bert_model = load_trained_model_from_checkpoint(self.config, self.checkpoint_path)
+        for l in bert_model.layers:
+            l.trainable = True
+        x1_in = Input(shape=(None,))
+        x2_in = Input(shape=(None,))
+#         x3_in = Input(shape=(5,))
+
+        x = bert_model([x1_in, x2_in])
+        x = Lambda(lambda x: x[:, 0])(x)
+
+#         x = concatenate([x, x3_in], axis=-1)
+
+        p = Dense(2, activation='softmax')(x)
+
+        self.model = Model([x1_in, x2_in], p)
+        self.sample_compile_model()
 
     def sample_compile_model(self):
         self.model.compile(
             loss='binary_crossentropy',
-            optimizer='adadelta',
+            optimizer=Adam(1e-5),
             metrics=['accuracy']
         )
         self.model.summary()
 
         return self.model
 
-    def compile_model(self, loss='categorical_crossentropy', optimizer=Adam(1e-5), metrics=None, loss_weights=None):
+    def compile_model(self, loss='categorical_crossentropy',
+            optimizer=SGD(lr=0.001), metrics=None, loss_weights=None):
         """Compile the model.
 
         Parameters
@@ -129,14 +148,22 @@ class bert_extend:
         x = bert_model([x1_in, x2_in])
         x = Lambda(lambda x: x[:, 0])(x)
 
-        des1 = Dense(256, activation='relu')(x)
+        flip_layer = GradientReversal(0.31)
+        p_in = flip_layer(x)
+
+        des1 = Dense(256, activation='relu')(p_in)
         des1 = Dropout(0.2)(des1)
+        des1 = Dense(64, activation='relu')(des1)
+        des1 = Dropout(0.2)(des1)
+
         des2 = Dense(256, activation='relu')(x)
         des2 = Dropout(0.2)(des2)
-        flip_layer = GradientReversal(0.31)
-        p_in = flip_layer(des1)
-
-        p2 = Dense(5, activation='softmax', name='domain_classifier')(p_in)
+        des2 = Dense(64, activation='relu')(des2)
+        des2 = Dropout(0.2)(des2)
+        des2 = Dense(16, activation='relu')(des2)
+        des2 = Dropout(0.2)(des2)
+        
+        p2 = Dense(5, activation='softmax', name='domain_classifier')(des1)
 
         p = Dense(2, activation='softmax', name='aux_classifier')(des2)
 
@@ -144,7 +171,7 @@ class bert_extend:
         return self.compile_model()
 
     def model_fit_1(self, train_D, valid_D):
-        self.build_bert_model()
+        self.build_bert_textcnn_model()
         checkpointer = ModelCheckpoint(filepath="./checkpoint_bert.hdf5",
                                        monitor='val_acc', verbose=True, save_best_only=True, mode='auto')
 
@@ -154,7 +181,7 @@ class bert_extend:
         self.model.fit_generator(
             train_D.__iter__(),
             steps_per_epoch=len(train_D),
-            epochs=10,
+            epochs=100,
             validation_data=valid_D.__iter__(),
             validation_steps=len(valid_D),
             callbacks=[reducelr, checkpointer, early],
@@ -167,18 +194,18 @@ class bert_extend:
                                        verbose=True, save_best_only=True,
                                        mode='auto')
 
-        early = EarlyStopping(monitor='val_aux_classifier_loss', patience=4, verbose=0,
-                              mode='auto')
+#         early = EarlyStopping(monitor='val_aux_classifier_loss', patience=4, verbose=0,
+#                               mode='auto')
         #         reducelr = ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=3, min_lr=0.001)
         model = self.build_bert_domain_model()
 
         model.fit_generator(
             train_D.__iter__(),
             steps_per_epoch=len(train_D),
-            epochs=10,
+            epochs=200,
             validation_data=valid_D.__iter__(),
             validation_steps=len(valid_D),
-            callbacks=[checkpointer, early],
+            callbacks=[checkpointer],
             verbose=True
         )
 
@@ -232,12 +259,12 @@ class bert_extend:
         test_2 = test['question2'].values
         # test_3 = test['category'].values
         test_data = [i for i in zip(test_1, test_2)]
-        self.model = self.build_bert_domain_model()
+        self.build_bert_domain_model()
         self.model.load_weights('./checkpoint_bert.hdf5')
         result = self.model.predict(self.t_encode(test_data), verbose=True)
-        print(result[0], result[1])
+#         print(result[0], result[1])
         res = np.argmax(result[0], axis=1)
-        print(res)
+#         print(res)
         return res
 
     def t_encode(self, d):
