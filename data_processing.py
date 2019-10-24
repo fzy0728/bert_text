@@ -1,6 +1,8 @@
 import numpy as np
 
 
+from keras.preprocessing import sequence
+
 from utils import (
     seq_pedding,
     get_category_embedding
@@ -44,4 +46,44 @@ class data_generator:
                     Y = seq_pedding(Y)
                     yield [x1, x2], [Y, Y1]
 #                     yield [x1, x2], [Y]
+                    x1, x2, Y, Y1 = [], [], [] ,[]
+
+class data_generator_word:
+    def __init__(self, data, tokenizer, batch_size=32, maxlen=100):
+        self.data = data
+        self.batch_size = batch_size
+        self.steps = len(self.data) // self.batch_size
+        self.maxlen = maxlen
+        if len(self.data) % self.batch_size != 0:
+            self.steps += 1
+        self.tokenizer = tokenizer
+
+    def __len__(self):
+        return self.steps
+
+    def __iter__(self):
+        while True:
+            idxs = list(range(len(self.data)))
+            np.random.shuffle(idxs)
+            x1, x2, Y, Y1 = [], [], [], []
+            for i in idxs:
+                d = self.data[i]
+                text1 = d[0]
+                text2 = d[1]
+                text1_id = self.tokenizer.encode(text1)
+                text2_id = self.tokenizer.encode(text2)
+                text3 = get_category_embedding(d[2])
+#                 print(text3)
+                y = d[3]
+                x1.append(text1_id)
+                x2.append(text2_id)
+                Y1.append(text3)
+                Y.append(y)
+                if len(x1) == self.batch_size or i == idxs[-1]:
+                    x1 = seq_pedding(x1)
+                    x2 = seq_pedding(x2)
+                    Y1 = seq_pedding(Y1)
+                    Y = seq_pedding(Y)
+                    # yield [x1, x2], [Y, Y1]
+                    yield [x1, x2], [Y]
                     x1, x2, Y, Y1 = [], [], [] ,[]
